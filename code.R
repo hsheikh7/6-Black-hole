@@ -114,13 +114,11 @@ g <- plot_features(explanation = explanation, ncol = 1)
 
 
 
+# Step 6: Multiple Explanations 
 
-
-# 3.3 Multiple Explanations ----
-
-explanation <- test_tbl %>%
+explanation <- test_data %>%
   slice(1:20) %>%
-  select(-Attrition) %>%
+  select(-went_on_backorder) %>%
   lime::explain(
     explainer = explainer,
     n_labels   = 1,
@@ -135,5 +133,3 @@ explanation %>%
 plot_features(explanation, ncol = 4)
 
 plot_explanations(explanation)
-
-
