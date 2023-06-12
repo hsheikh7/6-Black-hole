@@ -2,62 +2,67 @@
 
 # LIME FEATURE EXPLANATION ----
 
-# 1. Setup ----
-
+# Setup 
 # Load Libraries 
-
 library(h2o)
 library(recipes)
 library(readxl)
 library(tidyverse)
 library(tidyquant)
+library(caret)
 library(lime)
 
 # Load Data
-employee_attrition_tbl <- read_csv("datasets-1067-1925-WA_Fn-UseC_-HR-Employee-Attrition.csv")
-definitions_raw_tbl    <- read_excel("data_definitions.xlsx", sheet = 1, col_names = FALSE)
+dataset <- read.csv("data/product_backorders.csv") 
+glimpse(dataset)
 
-# Processing Pipeline
-source("00_Scripts/data_processing_pipeline.R")
+# Step 1: Split the Dataset into train and test sets
+# Set the seed for reproducibility
+set.seed(123)
 
-employee_attrition_readable_tbl <- process_hr_data_readable(employee_attrition_tbl, definitions_raw_tbl)
+# Specify the response variable
+response <- "went_on_backorder"
 
-# Split into test and train
-set.seed(seed = 1113)
-split_obj <- rsample::initial_split(employee_attrition_readable_tbl, prop = 0.85)
+train_indices <- createDataPartition(dataset[, response], p = 0.7, list = FALSE)
+train_data <- dataset[train_indices, ]
+test_data <- dataset[-train_indices, ]
 
-# Assign training and test data
-train_readable_tbl <- training(split_obj)
-test_readable_tbl  <- testing(split_obj)
+# dimensions of the train and test sets
+dim(train_data)
+dim(test_data)
 
-# ML Preprocessing Recipe 
-recipe_obj <- recipe(Attrition ~ ., data = train_readable_tbl) %>%
+# Specify the response and predictor variables
+response_var <- "went_on_backorder"
+predictor_vars <- setdiff(colnames(train_data), response_var)
+
+# Step 2: ML Preprocessing Recipe 
+recipe_obj <- recipe( went_on_backorder ~ ., data = train_data) %>%
   step_zv(all_predictors()) %>%
-  step_mutate_at(c("JobLevel", "StockOptionLevel"), fn = as.factor) %>% 
+  #step_mutate_at(c("JobLevel", "StockOptionLevel"), fn = as.factor) %>% 
   prep()
 
 recipe_obj
 
-train_tbl <- bake(recipe_obj, new_data = train_readable_tbl)
-test_tbl  <- bake(recipe_obj, new_data = test_readable_tbl)
+train_tbl <- bake(recipe_obj, new_data = train_data)
+test_tbl  <- bake(recipe_obj, new_data = test_data)
 
-# 2. Models ----
-
+# Step 3. Models 
+h2o.no_progress()
 h2o.init()
 
-automl_leader <- h2o.loadModel("04_Modeling/h20_models/StackedEnsemble_BestOfFamily_AutoML_20200903_144246")
+automl_leader <- h2o.loadModel("model/StackedEnsemble_AllModels_1_AutoML_17_20230610_222745")
 automl_leader
 
-# 3. LIME ----
 
-# 3.1 Making Predictions ----
+# Step 4. LIME Starter 
+# Making Predictions 
 
 predictions_tbl <- automl_leader %>% 
-  h2o.predict(newdata = as.h2o(test_tbl)) %>%
+  h2o.predict(newdata = as.h2o(test_data)) %>%
   as.tibble() %>%
   bind_cols(
     test_tbl %>%
-      select(Attrition, EmployeeNumber)
+      select( went_on_backorder, sku)
   )
 
 predictions_tbl
@@ -67,10 +72,10 @@ test_tbl %>%
   glimpse()
 
 
-# 3.2 Single Explanation ----
+# Step 5: Single Explanation ----
 
-explainer <- train_tbl %>%
-  select(-Attrition) %>%
+explainer <- train_data %>%
+  select(-went_on_backorder) %>%
   lime(
     model           = automl_leader,
     bin_continuous  = TRUE,
@@ -82,9 +87,9 @@ explainer
 
 ?lime::explain
 
-explanation <- test_tbl %>%
+explanation <- test_data %>%
   slice(1) %>%
-  select(-Attrition) %>%
+  select(-went_on_backorder) %>%
   lime::explain(
     
     # Pass our explainer object
@@ -106,6 +111,10 @@ explanation %>%
   select(feature:prediction) 
 
 g <- plot_features(explanation = explanation, ncol = 1)
+
+
+
+
 
 # 3.3 Multiple Explanations ----
 
